@@ -476,10 +476,28 @@ func ConnectBase() {
 	fmt.Printf("Block Number: %v\n", blockNumberInt)
 	fmt.Printf("Block Hash: %v\n", block.Hash)
 	fmt.Printf("Miner: %v\n", block.Miner)
-	fmt.Printf("Base Fee Per Gas: %v\n", block.BaseFeePerGas)
-	fmt.Printf("Gas Limit: %v\n", block.GasLimit)
-	fmt.Printf("Gas Used: %v\n", block.GasUsed)
-	fmt.Printf("Transactions Count: %d\n", len(block.Transactions))
+
+	baseFeePerGasInt, err := hexToInt64(block.BaseFeePerGas)
+	if err != nil {
+		fmt.Printf("Error converting hex to decimal: %v\n", err)
+		return
+	}
+	fmt.Printf("Base Fee Per Gas: %v\n", baseFeePerGasInt)
+
+	gasLimitInt, err := hexToInt64(block.GasLimit)
+	if err != nil {
+		fmt.Printf("Error converting hex to decimal: %v\n", err)
+		return
+	}
+	fmt.Printf("Gas Limit: %v\n", gasLimitInt)
+
+	gasUsedInt, err := hexToInt64(block.GasUsed)
+	if err != nil {
+		fmt.Printf("Error converting hex to decimal: %v\n", err)
+		return
+	}
+	fmt.Printf("Gas Used: %v\n", gasUsedInt)
+	fmt.Printf("Transactions Count: %d\n\n", len(block.Transactions))
 
 	// Print transactions
 	for i, tx := range block.Transactions {
@@ -520,25 +538,16 @@ func ConnectBase() {
 		}
 		fmt.Printf("Max Priority Fee Per Gas: %v\n", maxPriorityFeePerGasInt)
 
-		var gasPrice *big.Int
-		if tx.Type == "0x2" { // EIP-1559 transaction
-			baseFee, _ := new(big.Int).SetString(block.BaseFeePerGas[2:], 16)
-			maxFee, _ := new(big.Int).SetString(tx.MaxFeePerGas[2:], 16)
-			maxPriorityFee, _ := new(big.Int).SetString(tx.MaxPriorityFeePerGas[2:], 16)
-
-			// Effective gas price = Base Fee + Min(Max Priority Fee, Max Fee - Base Fee)
-			tipCap := new(big.Int).Sub(maxFee, baseFee)
-			if tipCap.Cmp(maxPriorityFee) > 0 {
-				tipCap = maxPriorityFee
-			}
-			gasPrice = new(big.Int).Add(baseFee, tipCap)
-		} else { // Legacy transaction
-			gasPrice, _ = new(big.Int).SetString(tx.GasPrice[2:], 16)
-		}
-
-		transactionFee := new(big.Int).Mul(new(big.Int).SetUint64(gasInt), gasPrice)
 		// Print the transaction fee
-		fmt.Printf("Transaction %d Fee: %s wei\n", i+1, transactionFee)
+		l2Fee := new(big.Int).Mul(new(big.Int).SetUint64(gasInt), new(big.Int).SetUint64(gasPriceInt))
+		fmt.Printf("L2 Fees Paid: %s wei\n", l2Fee)
+
+		ethFactor := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil) // 10^18
+		transactionFeeInEth := new(big.Float).Quo(
+			new(big.Float).SetInt(l2Fee),
+			new(big.Float).SetInt(ethFactor),
+		)
+		fmt.Printf("Transaction Fees: %v wei\n", transactionFeeInEth)
 
 		nonceInt, err := hexToInt64(tx.Nonce)
 		if err != nil {
