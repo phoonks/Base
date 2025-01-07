@@ -13,6 +13,7 @@ import (
 
 	"log"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -26,11 +27,12 @@ const (
 	mainnetRPC = "https://mainnet.base.org"
 	testnetRPC = "https://base-sepolia.infura.io/v3/2015a1e9dbec42eaab3ba418a43a4b79"
 	// testnetRPC     = "https://sepolia.base.org"
-	mainnetChainID = 8453
-	testnetChainID = 84532
-	usdcContract   = "0x081827b8C3Aa05287b5aA2bC3051fbE638F33152"
-	myAddress      = "0x8D1dD583c808FA344Cd374Df5fB34e5434C0bf25"
-	myContractABI  = `[
+	mainnetChainID  = 8453
+	testnetChainID  = 84532
+	contractAddress = "0x198ed8881be08e0AAdd7021425cAa980863b3761"
+	myAddress       = "0x1686C628EdDd1cb769EF50362B27C4dfF2A3D399"
+	fromAddress     = "0x8D1dD583c808FA344Cd374Df5fB34e5434C0bf25"
+	myContractABI   = `[
 		{
 			"inputs": [
 				{
@@ -443,9 +445,11 @@ func ConnectBase() {
 	}
 	defer rpcClient.Close()
 
+	contractABI, err := abi.JSON(strings.NewReader(myContractABI))
+
 	// Custom RPC call for eth_getBlockByNumber
 	var result map[string]interface{}
-	blockNumber := big.NewInt(19721175)
+	blockNumber := big.NewInt(20063335)
 	err = rpcClient.CallContext(context.Background(), &result, "eth_getBlockByNumber", toBlockNumArg(blockNumber), true)
 	if err != nil {
 		log.Fatalf("Failed to fetch block: %v", err)
@@ -501,7 +505,7 @@ func ConnectBase() {
 
 	// Print transactions
 	for i, tx := range block.Transactions {
-		if !strings.EqualFold(tx.To, myAddress) {
+		if !(strings.EqualFold(tx.To, myAddress) || strings.EqualFold(tx.From, fromAddress)) {
 			continue
 		}
 
@@ -577,17 +581,34 @@ func ConnectBase() {
 		}
 		fmt.Printf("Value: %v\n", valueInt)
 
-		if len(tx.To) > 0 && tx.To == usdcContract {
+		if len(tx.To) > 0 && strings.EqualFold(tx.To, contractAddress) {
 			// Decode the input data
-			inputData := []byte(tx.Input)
+			inputData, err := hex.DecodeString(tx.Input[2:]) // Strip "0x"
+			if err != nil {
+				log.Fatalf("Failed to decode input data: %v", err)
+			}
+
+			if len(inputData) > 0 {
+				method, err := contractABI.MethodById(inputData[:4])
+				if err != nil {
+					fmt.Println("Error finding method by ID:", err)
+				}
+				fmt.Printf("Method: %s\n", method.Name)
+
+				args, err := method.Inputs.Unpack(inputData[4:])
+				if err != nil {
+					fmt.Println("Error unpacking method inputs:", err)
+				}
+				fmt.Printf("Arguments: %v\n", args)
+			}
 			if len(inputData) >= 4 && hex.EncodeToString(inputData[:4]) == "a9059cbb" { // `transfer` method signature
 				// Extract the recipient address and amount
 				recipient := common.BytesToAddress(inputData[4:36])
 				amount := new(big.Int).SetBytes(inputData[36:])
 
 				// Check if the recipient is your address
-				if recipient.String() == myAddress {
-					fmt.Printf("USDC transfer to %s detected in transaction %s\n", myAddress, tx.Hash)
+				if strings.EqualFold(recipient.String(), myAddress) {
+					fmt.Printf("WCC transfer to %s detected in transaction %s\n", myAddress, tx.Hash)
 					fmt.Printf("Amount: %s\n", amount.String())
 				}
 			}
